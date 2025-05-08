@@ -37,14 +37,41 @@ async def random_delay(min_seconds=1, max_seconds=3):
     await asyncio.sleep(delay)
 
 
+async def validate_group():
+    """Validate that the group username is valid and accessible"""
+    try:
+        # Check if group_username is set
+        if not group_username:
+            print(f"[{datetime.now()}] ERROR: TELEGRAM_GROUP_USERNAME environment variable is not set.")
+            return None
+            
+        # Try to get the group entity
+        group = await client.get_entity(group_username)
+        return group
+    except ValueError as e:
+        if "Cannot find any entity corresponding to" in str(e):
+            print(f"[{datetime.now()}] ERROR: Could not find group '{group_username}'. Please check if the username is correct.")
+        elif "Cannot cast NoneType to any kind of Peer" in str(e):
+            print(f"[{datetime.now()}] ERROR: Group username '{group_username}' could not be resolved to a Telegram group.")
+        else:
+            print(f"[{datetime.now()}] ERROR: Invalid group: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"[{datetime.now()}] ERROR while validating group: {str(e)}")
+        return None
+
+
 async def scrape_messages():
     try:
         # Check if we're already logged in
         if not client.is_connected():
             await client.start(phone)
             
-        # Get the group entity
-        group = await client.get_entity(group_username)
+        # Get and validate the group entity
+        group = await validate_group()
+        if not group:
+            print(f"[{datetime.now()}] Skipping scrape due to invalid group.")
+            return
         
         # Load existing messages if file exists
         if os.path.exists(output_file):
@@ -112,6 +139,13 @@ async def main():
     # Run the scraper immediately on start
     await client.start(phone)
     print(f"[{datetime.now()}] Initial scrape starting...")
+    
+    # First validate the group
+    group = await validate_group()
+    if not group:
+        print(f"[{datetime.now()}] WARNING: Group validation failed. Please check your TELEGRAM_GROUP_USERNAME in .env file.")
+        print(f"[{datetime.now()}] The script will continue to run and attempt to scrape, but may fail if the group is invalid.")
+    
     await scrape_messages()
 
     # Set up scheduler to run periodically with a more conservative interval
